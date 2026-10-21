@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Consulta tu pedido | Happy Burger</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
+</head>
+<body>
+  <header class="encabezado">
+    <a class="marca" href="{{ url_for('consultar') }}">Happy Burger<span>Hecho para disfrutar.</span></a>
+    <span class="etiqueta">Consulta de pedidos</span>
+  </header>
+  <main>
+    <section class="introduccion" aria-labelledby="titulo">
+      <p class="acento">TU PEDIDO, A LA MANO</p>
+      <h1 id="titulo">Un buen momento<br>empieza aquí.</h1>
+      <p>Consulta los detalles de tu pedido con el número que aparece en tu ticket.</p>
+      <p class="nota">La atención y administración de pedidos se realizan desde la consola de Happy Burger.</p>
+    </section>
+    <section class="tarjeta" aria-labelledby="formulario-titulo">
+      <p class="acento">HAPPY BURGER</p>
+      <h2 id="formulario-titulo">Consulta tu pedido</h2>
+      <form method="post" action="{{ url_for('consultar') }}">
+        <label for="numero">Número de pedido</label>
+        <p id="ayuda" class="ayuda">Escríbelo como aparece en tu ticket. Por ejemplo: O1.</p>
+        <input id="numero" name="numero" type="text" value="{{ numero }}"
+               maxlength="128" required autocomplete="off" aria-describedby="ayuda"
+               {% if mensaje %}aria-invalid="true"{% endif %}>
+        <button type="submit">Consultar pedido <span aria-hidden="true">→</span></button>
+      </form>
+      {% if mensaje %}
+      <p class="mensaje" role="alert">{{ mensaje }}</p>
+      {% endif %}
+      {% if pedido %}
+      <section class="resultado" aria-labelledby="resultado-titulo">
+        <div class="resultado-cabecera">
+          <h2 id="resultado-titulo">Pedido {{ pedido.pedido }}</h2>
+          <span class="estado">{{ pedido.estado or 'No disponible' }}</span>
+        </div>
+        <dl>
+          <div><dt>Cliente</dt><dd>{{ pedido.cliente or 'No disponible' }}</dd></div>
+          <div><dt>Producto</dt><dd>{{ pedido.producto or 'No disponible' }}</dd></div>
+          <div><dt>Cantidad</dt><dd>{{ pedido.cantidad if pedido.cantidad is not none else 'No disponible' }}</dd></div>
+          <div><dt>Precio unitario</dt><dd>{% if pedido.precio is not none %}{{ pedido.precio|moneda }}{% else %}No disponible{% endif %}</dd></div>
+          <div class="total"><dt>Importe total</dt><dd>{% if pedido.importe is not none %}{{ pedido.importe|moneda }}{% else %}No disponible{% endif %}</dd></div>
+        </dl>
+      </section>
+      {% endif %}
+      <p class="privacidad">Solo mostramos los detalles del pedido consultado. Tus datos de contacto permanecen privados.</p>
+    </section>
+  </main>
+  <footer>Happy Burger · Proyecto final Tecmilenio · Consulta local</footer>
+</body>
+</html>

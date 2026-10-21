@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+happy_burger.db
+happy_burger.db-journal
+happy_burger.db-wal
+happy_burger.db-shm
+tickets/
