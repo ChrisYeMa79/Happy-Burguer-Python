@@ -21,8 +21,8 @@ proyecto_final/
 │   └── consulta.html       # Formulario y resultado
 ├── static/
 │   └── estilos.css         # Diseño responsivo, sin frameworks
-├── test_proyecto.py         # 13 pruebas anteriores, conservadas
-├── test_web.py              # 12 pruebas nuevas
+├── test_proyecto.py         # 16 pruebas de consola, CRUD y pedidos
+├── test_web.py              # 15 pruebas web
 ├── requirements.txt        # Flask y su versión
 ├── .gitignore              # Excluye entorno, base y tickets del control de versiones
 ├── happy_burger.db         # Base local existente; no se reinicia
@@ -61,15 +61,17 @@ Desde `proyecto_final`:
 .\.venv\Scripts\python.exe main.py
 ```
 
-1. **Clientes**: agregar, consultar, actualizar o eliminar.
-2. **Menú**: agregar, consultar, actualizar o eliminar productos.
-3. **Pedidos**: crear con claves existentes o cancelar por número.
+1. **Pedidos**: crear con claves existentes o cancelar por número.
+2. **Clientes**: agregar, consultar, actualizar o eliminar.
+3. **Menú**: agregar, consultar, actualizar o eliminar productos.
 4. **Salir**: termina el programa.
 
 Las opciones principales conservan su numeración original: 1 Pedidos, 2 Clientes,
 3 Menú y 4 Salir. Cada submenú vuelve al principal después de operar; 0 permite volver.
 En consultas de clientes/productos, una clave vacía lista todos los registros.
 Al actualizar, dejar vacío un campo conserva su valor; la clave no se modifica.
+Si todos los campos quedan vacíos, se muestra “Sin cambios. Se conservaron los datos
+originales.” y se vuelve al menú sin ejecutar UPDATE.
 
 La función independiente `solicitar_pedido()` del avance 1 se conserva y sigue probada.
 El flujo actual de Pedidos usa el precio de SQLite y no solicita precios manuales.
@@ -108,9 +110,12 @@ Este ejemplo es orientativo: no se insertan datos de demostración en la base re
 
 Usa claves libres si estos identificadores ya existen. Los números de pedido se
 conservan como **texto** por compatibilidad: `O1`, `123` y `002` son válidos,
-y `002` es diferente de `2`. La consulta web admite de 1 a 128 caracteres
-imprimibles, sin saltos de línea, y elimina espacios exteriores. Una entrada vacía,
-demasiado larga o con controles muestra error sin interrumpir la aplicación.
+y `002` es diferente de `2`. La creación y la consulta web comparten la función
+`validar_clave_pedido()`: primero elimina espacios en blanco exteriores y después
+exige de 1 a 128 caracteres imprimibles, sin controles internos. La creación guarda
+la clave normalizada y la usa en el ticket; la consulta aplica la misma regla.
+Una entrada que queda vacía, supera el límite o conserva controles muestra error
+sin interrumpir la aplicación.
 Una clave con formato válido pero inexistente muestra “No encontramos un pedido”.
 
 ## Persistencia y reglas
@@ -165,8 +170,8 @@ Desde `proyecto_final`:
 .\.venv\Scripts\python.exe -B -m unittest -v
 ```
 
-Se conservan sin cambios las 13 pruebas de `test_proyecto.py` y se añaden 12 en
-`test_web.py`, con unittest y el cliente de pruebas de Flask, sin pytest.
+La suite contiene 16 pruebas en `test_proyecto.py` y 15 en `test_web.py`: 31 en total,
+con unittest y el cliente de pruebas de Flask, sin pytest.
 Cada prueba crea bases y tickets temporales dentro de `proyecto_final` y los retira
 al terminar. Ninguna utiliza la base de uso real para generar datos de prueba.
 
@@ -176,13 +181,15 @@ Cobertura:
 - Pedidos, precio histórico, cancelación, duplicados y claves foráneas.
 - Tickets y reversión ante un fallo de escritura.
 - Flujo administrativo de consola.
+- Actualización sin cambios sin UPDATE, modificaciones válidas y validaciones.
+- Validación compartida de claves: longitud, espacios exteriores, controles y duplicados.
 - Inicio web, estilos, consulta existente e inexistente y validación.
 - Presentación de campos, pedidos cancelados y precisión de importes grandes.
 - Privacidad, escape HTML, consultas parametrizadas y límites de formulario.
 - Ausencia de base sin creación accidental y manejo de errores.
 - Integridad SQLite, claves foráneas y huella idéntica antes/después de consultas.
 
-Resultado de la revisión: **25 pruebas aprobadas (13 anteriores + 12 nuevas)**.
+Resultado de la revisión: **31 pruebas aprobadas (16 de proyecto + 15 web)**.
 El cliente Flask verifica las respuestas HTTP sin abrir un servidor.
 La adaptación visual está implementada con CSS y media queries; queda pendiente
 la comprobación visual manual en un navegador de escritorio y móvil.
@@ -193,8 +200,8 @@ la comprobación visual manual en un navegador de escritorio y móvil.
 | --- | --- | --- |
 | 1 | Carpeta, main.py, menú con condicionales/ciclo, cálculo de producto por cantidad | main.py y pruebas del cálculo/consola |
 | 2 | Módulos independientes, clases, campos, diccionarios y docstrings | clientes.py, menu.py, pedidos.py; métodos ahora funcionales |
-| 3 | SQLite, tablas, CRUD, pedidos, consulta de precio, cálculo y ticket | base_datos.py, modelos y 13 pruebas originales |
-| 4 | Flask, template para consulta por número y SQLite existente | app.py, consulta.html, estilos.css y 12 pruebas nuevas |
+| 3 | SQLite, tablas, CRUD, pedidos, consulta de precio, cálculo y ticket | base_datos.py, modelos y 16 pruebas en test_proyecto.py |
+| 4 | Flask, template para consulta por número y SQLite existente | app.py, consulta.html, estilos.css y 15 pruebas en test_web.py |
 
 La revisión se basa en los requisitos académicos compartidos en esta conversación.
 No se encontró un documento académico independiente en la carpeta: no se puede

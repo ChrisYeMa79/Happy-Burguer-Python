@@ -39,6 +39,7 @@ class PruebasWeb(unittest.TestCase):
         return self.cliente.post("/", data={"numero": numero})
 
     def test_inicio_y_estilos(self):
+        """Verifica el formulario inicial, los estilos y la depuración desactivada."""
         respuesta = self.cliente.get("/")
         self.assertEqual(respuesta.status_code, 200)
         texto = respuesta.get_data(as_text=True)
@@ -50,6 +51,7 @@ class PruebasWeb(unittest.TestCase):
         self.assertFalse(self.app.debug)
 
     def test_pedido_existente_y_presentacion(self):
+        """Comprueba los detalles del pedido sin exponer datos de contacto."""
         respuesta = self.consultar("O1")
         self.assertEqual(respuesta.status_code, 200)
         texto = respuesta.get_data(as_text=True)
@@ -62,11 +64,13 @@ class PruebasWeb(unittest.TestCase):
         self.assertEqual(respuesta.headers["Cache-Control"], "no-store")
 
     def test_pedido_inexistente(self):
+        """Verifica la respuesta 404 para un pedido inexistente."""
         respuesta = self.consultar("9999")
         self.assertEqual(respuesta.status_code, 404)
         self.assertIn("No encontramos un pedido", respuesta.get_data(as_text=True))
 
     def test_numeros_invalidos(self):
+        """Verifica el rechazo de claves vacías, largas o con controles."""
         for numero in ["", "   ", "X" * 129, "O\n1", "O\x001"]:
             with self.subTest(numero=numero):
                 respuesta = self.consultar(numero)
@@ -76,11 +80,56 @@ class PruebasWeb(unittest.TestCase):
         self.assertEqual(self.consultar("O1").status_code, 200)
 
     def test_claves_texto_y_ceros_iniciales(self):
+        """Comprueba espacios exteriores y conservación de ceros iniciales."""
         self.assertEqual(self.consultar(" O1 ").status_code, 200)
         self.assertEqual(self.consultar("002").status_code, 200)
         self.assertEqual(self.consultar("2").status_code, 404)
 
+    def test_creacion_rechaza_claves_invalidas_sin_escrituras(self):
+        """Creación y web rechazan las mismas claves sin guardar pedidos ni tickets."""
+        antes = self.bd.read_bytes()
+        tickets = set((self.raiz / "tickets").iterdir())
+        for clave in ["", "   ", "X" * 129, " O" + "X" * 128 + " ",
+                      "O\n1", "O\r1", "O\t1", "O\x001", "O\x7f1"]:
+            with self.subTest(clave=repr(clave)):
+                pedido = Pedido(clave, "C1", "P1", ruta_bd=self.bd,
+                                ruta_tickets=self.raiz / "tickets")
+                with self.assertRaises(ValueError):
+                    pedido.crear()
+                self.assertEqual(self.consultar(clave).status_code, 400)
+        self.assertEqual(antes, self.bd.read_bytes())
+        self.assertEqual(tickets, set((self.raiz / "tickets").iterdir()))
+
+    def test_creacion_normaliza_espacios_y_evita_duplicados(self):
+        """La clave normalizada se conserva en SQLite, el objeto y el ticket."""
+        pedido = Pedido("  NUEVO  ", "C1", "P1", ruta_bd=self.bd,
+                        ruta_tickets=self.raiz / "tickets")
+        ticket = pedido.crear()
+        self.assertEqual(pedido.datos["pedido"], "NUEVO")
+        self.assertIn("Pedido: NUEVO\n", ticket.read_text(encoding="utf-8"))
+        for clave in ["NUEVO", "  NUEVO  "]:
+            self.assertEqual(Pedido.consultar(clave, self.bd)["pedido"], "NUEVO")
+            self.assertEqual(self.consultar(clave).status_code, 200)
+        with conectar(self.bd, solo_lectura=True) as con:
+            self.assertEqual(con.execute(
+                "SELECT COUNT(*) FROM pedido WHERE pedido = ?", ("  NUEVO  ",)).fetchone()[0], 0)
+        with self.assertRaises(sqlite3.IntegrityError):
+            Pedido(" NUEVO ", "C1", "P1", ruta_bd=self.bd,
+                   ruta_tickets=self.raiz / "tickets").crear()
+        pedido.cancelar()
+        self.assertEqual(Pedido.consultar("NUEVO", self.bd)["estado"], "cancelado")
+
+    def test_creacion_claves_validas_consultables_en_web(self):
+        """Conserva ceros iniciales, espacios internos y el límite de 128 caracteres."""
+        for clave in ["X" * 128, "003", "Pedido con espacios"]:
+            with self.subTest(clave=clave):
+                Pedido(" " + clave + " ", "C1", "P1", ruta_bd=self.bd,
+                       ruta_tickets=self.raiz / "tickets").crear()
+                self.assertEqual(Pedido.consultar(clave, self.bd)["pedido"], clave)
+                self.assertEqual(self.consultar(clave).status_code, 200)
+
     def test_cancelacion_y_precio_historico(self):
+        """Comprueba el estado cancelado y el precio original en la consulta."""
         self.pedido.cancelar()
         self.producto.actualizar({"precio": "99.99"})
         texto = self.consultar("O1").get_data(as_text=True)
@@ -90,11 +139,13 @@ class PruebasWeb(unittest.TestCase):
         self.assertNotIn("$99.99", texto)
 
     def test_inyeccion_sql_no_devuelve_pedidos(self):
+        """Comprueba que una entrada SQL no permita recuperar otros pedidos."""
         respuesta = self.consultar("' OR 1=1 --")
         self.assertEqual(respuesta.status_code, 404)
         self.assertNotIn("Pedido O1", respuesta.get_data(as_text=True))
 
     def test_escape_html(self):
+        """Verifica el escape de HTML en entradas y datos almacenados."""
         with conectar(self.bd) as con:
             con.execute("UPDATE menu SET nombre = ? WHERE clave = ?",
                         ("<script>alert('x')</script>", "P1"))
@@ -105,6 +156,7 @@ class PruebasWeb(unittest.TestCase):
         self.assertNotIn("<script>", texto)
 
     def test_integridad_sin_modificaciones(self):
+        """Verifica que las consultas conserven la base y su integridad."""
         antes = hashlib.sha256(self.bd.read_bytes()).hexdigest()
         for numero in ["O1", "002", "inexistente", "", "' OR 1=1 --"]:
             self.consultar(numero)
@@ -118,6 +170,7 @@ class PruebasWeb(unittest.TestCase):
                 con.execute("DELETE FROM pedido")
 
     def test_bd_ausente_no_se_crea_y_error_no_expone_rutas(self):
+        """Comprueba que una base ausente no se cree ni revele su ruta."""
         ruta = self.raiz / "no_existe.db"
         cliente = crear_app(ruta).test_client()
         respuesta = cliente.post("/", data={"numero": "O1"})
@@ -128,11 +181,13 @@ class PruebasWeb(unittest.TestCase):
         self.assertFalse(ruta.exists())
 
     def test_formulario_demasiado_grande(self):
+        """Verifica la respuesta 413 ante un formulario excesivo."""
         respuesta = self.consultar("X" * 10000)
         self.assertEqual(respuesta.status_code, 413)
         self.assertIn("demasiado grande", respuesta.get_data(as_text=True))
 
     def test_importes_grandes_sin_perder_centavos(self):
+        """Comprueba la presentación exacta de importes grandes."""
         self.producto.actualizar({"precio": "999999999.99"})
         Pedido("G1", "C1", "P1", cantidad=999999, ruta_bd=self.bd,
                ruta_tickets=self.raiz / "tickets").crear()

@@ -35,7 +35,11 @@ def solicitar_pedido():
 
 
 def gestionar_catalogo(modelo, ruta_bd):
-    """Ejecuta una operación CRUD sobre clientes o productos."""
+    """Ejecuta una operación CRUD sobre clientes o productos.
+
+    Si todos los campos de actualización quedan vacíos, conserva los datos
+    y muestra un mensaje sin ejecutar UPDATE.
+    """
     opcion = input("1. Agregar\n2. Consultar\n3. Actualizar\n4. Eliminar\n0. Volver\nOpción: ").strip()
     if opcion == "0":
         return
@@ -67,6 +71,9 @@ def gestionar_catalogo(modelo, ruta_bd):
                 valor = input(f"{campo} [{filas[0][campo]}]: ").strip()
                 if valor:
                     cambios[campo] = valor
+            if not cambios:
+                print("Sin cambios. Se conservaron los datos originales.")
+                return
             registro.actualizar(cambios)
         else:
             registro.eliminar()

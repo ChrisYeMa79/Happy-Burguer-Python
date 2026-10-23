@@ -7,6 +7,16 @@ from base_datos import RUTA_BD, conectar
 RUTA_TICKETS = Path(__file__).resolve().parent / "tickets"
 
 
+def validar_clave_pedido(numero):
+    """Normaliza espacios exteriores y exige de 1 a 128 caracteres imprimibles."""
+    if not isinstance(numero, str):
+        raise ValueError("Introduce el número de pedido indicado en tu ticket.")
+    numero = numero.strip()
+    if not numero or len(numero) > 128 or not numero.isprintable():
+        raise ValueError("Introduce un número de pedido válido de 1 a 128 caracteres, sin saltos de línea.")
+    return numero
+
+
 class Pedido:
     """Pedido cuyo precio se obtiene siempre desde SQLite."""
 
@@ -20,6 +30,7 @@ class Pedido:
 
     def crear(self):
         """Consulta referencias, guarda el pedido y devuelve la ruta del ticket UTF-8."""
+        self.datos["pedido"] = validar_clave_pedido(self.datos["pedido"])
         if any(not isinstance(v, str) or not v.strip()
                for v in (self.datos["pedido"], self.datos["cliente"], self.datos["producto"])):
             raise ValueError("Las claves del pedido, cliente y producto son obligatorias.")
@@ -77,11 +88,7 @@ class Pedido:
         Las claves existentes son texto (por ejemplo O1), no solo números.
         Devuelve un diccionario o None; nunca enumera otros pedidos.
         """
-        if not isinstance(numero, str):
-            raise ValueError("Introduce el número de pedido indicado en tu ticket.")
-        numero = numero.strip()
-        if not numero or len(numero) > 128 or not numero.isprintable():
-            raise ValueError("Introduce un número de pedido válido de 1 a 128 caracteres, sin saltos de línea.")
+        numero = validar_clave_pedido(numero)
         with conectar(ruta_bd, solo_lectura=True) as con:
             fila = con.execute(
                 """SELECT p.pedido, c.nombre AS cliente, m.nombre AS producto,

@@ -12,7 +12,7 @@ from base_datos import conectar, inicializar
 from clientes import Cliente
 from menu import Producto
 from pedidos import Pedido
-from main import main, solicitar_pedido
+from main import gestionar_catalogo, main, solicitar_pedido
 
 
 class PruebasProyecto(unittest.TestCase):
@@ -40,18 +40,21 @@ class PruebasProyecto(unittest.TestCase):
                       ruta_tickets=self.tickets, **opciones)
 
     def test_calculo_avance_1(self):
+        """Comprueba el importe calculado a partir del precio y la cantidad."""
         with patch("builtins.input", side_effect=["Hamburguesa", "45.50", "3"]):
             with redirect_stdout(io.StringIO()) as salida:
                 self.assertEqual(solicitar_pedido(), Decimal("136.50"))
         self.assertIn("$136.50", salida.getvalue())
 
     def test_reintentos_avance_1(self):
+        """Comprueba los reintentos ante entradas inválidas del cálculo."""
         entradas = ["", "Papas", "abc", "NaN", "Infinity", "-1", "10.25", "0", "1.5", "2"]
         with patch("builtins.input", side_effect=entradas):
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(solicitar_pedido(), Decimal("20.50"))
 
     def test_crud_clientes_y_persistencia(self):
+        """Verifica el CRUD de clientes y la persistencia entre conexiones."""
         self.cliente.agregar()
         self.cliente.actualizar({"nombre": "Ana María", "telefono": "123"})
         inicializar(self.bd)
@@ -63,6 +66,7 @@ class PruebasProyecto(unittest.TestCase):
         self.assertEqual(Cliente.consultar("C1", self.bd), [])
 
     def test_crud_productos_y_persistencia(self):
+        """Verifica el CRUD de productos y la precisión de sus precios."""
         self.producto.agregar()
         self.producto.actualizar({"precio": "60.10", "nombre": "Doble"})
         inicializar(self.bd)
@@ -72,7 +76,53 @@ class PruebasProyecto(unittest.TestCase):
         Producto(**filas[0], ruta_bd=self.bd).eliminar()
         self.assertEqual(Producto.consultar(ruta_bd=self.bd), [])
 
+    def test_catalogo_actualizacion_sin_cambios(self):
+        """Los campos vacíos conservan ambos catálogos sin llamar a actualizar."""
+        self.sembrar()
+        for modelo, clave, vacios in [(Cliente, "C1", ["", " ", "", ""]),
+                                      (Producto, "P1", [" ", ""])]:
+            with self.subTest(modelo=modelo.__name__):
+                originales = modelo.consultar(clave, self.bd)
+                antes = self.bd.read_bytes()
+                with patch("builtins.input", side_effect=["3", clave, *vacios]), \
+                        patch.object(modelo, "actualizar") as actualizar, \
+                        redirect_stdout(io.StringIO()) as salida:
+                    gestionar_catalogo(modelo, self.bd)
+                actualizar.assert_not_called()
+                self.assertIn("Sin cambios. Se conservaron los datos originales.", salida.getvalue())
+                self.assertNotIn("Operación completada", salida.getvalue())
+                self.assertEqual(antes, self.bd.read_bytes())
+                self.assertEqual(originales, modelo.consultar(clave, self.bd))
+
+    def test_catalogo_actualizacion_valida(self):
+        """La consola sigue guardando cambios y conserva los campos omitidos."""
+        self.sembrar()
+        for modelo, clave, valores, cambios in [
+                (Cliente, "C1", ["Ana María", "", "", ""], {"nombre": "Ana María"}),
+                (Producto, "P1", ["", "60.10"], {"precio": Decimal("60.10")})]:
+            with self.subTest(modelo=modelo.__name__):
+                esperado = modelo.consultar(clave, self.bd)[0]
+                esperado.update(cambios)
+                with patch("builtins.input", side_effect=["3", clave, *valores]), \
+                        redirect_stdout(io.StringIO()) as salida:
+                    gestionar_catalogo(modelo, self.bd)
+                self.assertIn("Operación completada.", salida.getvalue())
+                self.assertEqual(modelo.consultar(clave, self.bd), [esperado])
+
+    def test_actualizacion_conserva_validaciones(self):
+        """Los cambios inválidos siguen rechazándose sin modificar registros."""
+        self.sembrar()
+        antes = self.bd.read_bytes()
+        for registro, cambios in [(self.cliente, {"nombre": " "}),
+                                  (self.producto, {"precio": "-1"}),
+                                  (self.cliente, {"clave": "C2"}),
+                                  (self.producto, {"campo_invalido": "X"})]:
+            with self.subTest(cambios=cambios), self.assertRaises(ValueError):
+                registro.actualizar(cambios)
+        self.assertEqual(antes, self.bd.read_bytes())
+
     def test_pedido_precio_bd_ticket_y_cancelacion(self):
+        """Verifica precio histórico, contenido del ticket y cancelación."""
         self.sembrar()
         pedido = self.pedido(precio="0.01", cantidad=3)
         ticket = pedido.crear()
@@ -93,6 +143,7 @@ class PruebasProyecto(unittest.TestCase):
         self.assertTrue(ticket.exists())
 
     def test_duplicados_y_referencias_protegidas(self):
+        """Rechaza claves duplicadas y elimina solo registros sin referencias."""
         self.sembrar()
         for registro in [self.cliente, self.producto]:
             with self.assertRaises(sqlite3.IntegrityError):
@@ -106,6 +157,7 @@ class PruebasProyecto(unittest.TestCase):
                 registro.eliminar()
 
     def test_pedido_referencias_y_cantidades_invalidas(self):
+        """Rechaza pedidos con referencias inexistentes o cantidades inválidas."""
         with self.assertRaises(ValueError):
             self.pedido().crear()
         self.sembrar()
@@ -118,6 +170,7 @@ class PruebasProyecto(unittest.TestCase):
             self.assertEqual(con.execute("SELECT COUNT(*) FROM pedido").fetchone()[0], 0)
 
     def test_validacion_y_registros_inexistentes(self):
+        """Rechaza precios, campos y operaciones sobre registros inválidos."""
         for precio in ["NaN", "Infinity", "-1", "1.001", "abc"]:
             with self.subTest(precio=precio), self.assertRaises(ValueError):
                 Producto("P2", "Papas", precio, self.bd).agregar()
@@ -129,6 +182,7 @@ class PruebasProyecto(unittest.TestCase):
                 operacion()
 
     def test_sql_parametrizado(self):
+        """Verifica que las claves con texto SQL se traten como datos."""
         clave = "C'; DROP TABLE clientes;--"
         cliente = Cliente(clave, "O'Connor", "Calle", "a@b.com", "123", self.bd)
         cliente.agregar()
@@ -138,6 +192,7 @@ class PruebasProyecto(unittest.TestCase):
         self.assertEqual(Cliente.consultar(ruta_bd=self.bd), [])
 
     def test_fallo_ticket_revierte_pedido(self):
+        """Comprueba que un fallo del ticket revierta la inserción del pedido."""
         self.sembrar()
         self.tickets.write_text("Esto es un archivo, no una carpeta.", encoding="utf-8")
         with self.assertRaises(OSError):
@@ -146,12 +201,14 @@ class PruebasProyecto(unittest.TestCase):
             self.assertEqual(con.execute("SELECT COUNT(*) FROM pedido").fetchone()[0], 0)
 
     def test_clave_pedido_no_es_ruta(self):
+        """Comprueba que la clave no determine la ruta del ticket."""
         self.sembrar()
         ticket = self.pedido("../../fuera").crear()
         self.assertEqual(ticket.parent, self.tickets)
         self.assertTrue(ticket.name.startswith("ticket_"))
 
     def test_consola_integrada(self):
+        """Verifica el flujo integrado de catálogos, pedidos y cancelación."""
         entradas = [
             "9", "2", "1", "C1", "Ana", "Calle", "a@b.com", "123",
             "3", "1", "P1", "Hamburguesa", "45.50",
@@ -170,6 +227,7 @@ class PruebasProyecto(unittest.TestCase):
         self.assertEqual(len(list(self.tickets.glob("*.txt"))), 1)
 
     def test_consola_error_y_continuacion(self):
+        """Comprueba que la consola continúe después de una entrada inválida."""
         with patch("builtins.input", side_effect=["1", "1", "O1", "C1", "P1", "abc", "4"]):
             with redirect_stdout(io.StringIO()) as salida:
                 main(self.bd, self.tickets)
